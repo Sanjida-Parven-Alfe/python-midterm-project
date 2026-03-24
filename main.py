@@ -47,6 +47,9 @@ if __name__ == '__main__':
 	screen = pygame.display.set_mode((screen_width,screen_height))
 	clock = pygame.time.Clock()
 	game = Game()
+	
+	background_surf = pygame.image.load('graphics/space.png').convert() 
+	background_surf = pygame.transform.scale(background_surf, (screen_width, screen_height))
 
 	while True:
 		for event in pygame.event.get():
@@ -55,7 +58,7 @@ if __name__ == '__main__':
 				sys.exit()
 			
 
-		screen.fill((30,30,30))
+		screen.blit(background_surf, (0, 0))
 		game.run()
 		
 			
