@@ -14,6 +14,10 @@ class Player(pygame.sprite.Sprite):
 		
 		self.lasers = pygame.sprite.Group()
 		
+		#for coloring lasers
+		self.colors = ['red', 'green', 'blue', 'yellow']
+		self.color_index = 0
+		
 	def get_input(self):
 		keys = pygame.key.get_pressed()
 
@@ -37,7 +41,10 @@ class Player(pygame.sprite.Sprite):
 		if self.rect.right >= self.max_x_constraint:
 			self.rect.right = self.max_x_constraint
 	def shoot_laser(self):
-		self.lasers.add(Laser(self.rect.center, -8,self.rect.bottom))		
+		current_color = self.colors[self.color_index]
+		self.lasers.add(Laser(self.rect.center, -8, self.rect.bottom, current_color))
+		self.color_index = (self.color_index + 1) % len(self.colors)
+				
 	def update(self):
 		self.get_input()
 		self.constraint()
