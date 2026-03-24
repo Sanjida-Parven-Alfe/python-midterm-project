@@ -3,8 +3,9 @@ from player import Player
 
 class Game:
 	def __init__(self):
-		player_sprite = Player((screen_width / 2,screen_height))
+		player_sprite = Player((screen_width / 2,screen_height),screen_width,5)
 		self.player = pygame.sprite.GroupSingle(player_sprite)
+		
 		
 	def run(self):
 		self.player.update()
