@@ -210,8 +210,10 @@ class UIManager:
         if self.state == self.MENU:
             title = self.title_font.render("SPACE SHOOTER", True, self.text_color)
             subtitle = self.small_font.render("Press H for High Scores", True, self.accent_color)
-            screen.blit(title, title.get_rect(center=(self.screen_width // 2, 110)))
-            screen.blit(subtitle, subtitle.get_rect(center=(self.screen_width // 2, 160)))
+            tip = self.small_font.render("Tip: Collect EXTRA items for double ships and bigger bullets!", True, self.warning_color)
+            screen.blit(title, title.get_rect(center=(self.screen_width // 2, 80)))
+            screen.blit(subtitle, subtitle.get_rect(center=(self.screen_width // 2, 130)))
+            screen.blit(tip, tip.get_rect(center=(self.screen_width // 2, 165)))
 
             self._draw_button(screen, self.button_rects["start"], "Start Game")
             self._draw_button(screen, self.button_rects["scores"], "High Scores")
@@ -246,7 +248,7 @@ class UIManager:
                 screen.blit(empty_surface, (60, 236))
 
             search_prompt = self.small_font.render(
-                f"Search player: {self.input_text}",
+                f"Search player: {self.input_text}_",
                 True,
                 self.accent_color,
             )
@@ -262,7 +264,7 @@ class UIManager:
             title = self.title_font.render("GAME OVER", True, self.text_color)
             score_surface = self.menu_font.render(f"Score: {final_score or self.pending_score}", True, self.accent_color)
             input_surface = self.text_font.render(
-                f"Player Name: {self.input_text or 'Type name and press Enter'}",
+                f"Player Name: {self.input_text}_" if self.input_text else "Type name and press Enter",
                 True,
                 self.text_color,
             )

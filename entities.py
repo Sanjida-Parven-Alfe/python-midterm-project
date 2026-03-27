@@ -14,8 +14,14 @@ SHAPE = [
 ]
 
 
+_IMAGE_CACHE = {}
+
 def load_image(path: str, target_size: Tuple[int, int] | None = None, trim: bool = False) -> pygame.Surface:
-    """Load an image, optionally crop transparent padding, then resize it."""
+    """Load an image, optionally crop transparent padding, then resize it, using an in-memory cache to prevent lag."""
+    cache_key = (path, target_size, trim)
+    if cache_key in _IMAGE_CACHE:
+        return _IMAGE_CACHE[cache_key]
+
     image = pygame.image.load(path).convert_alpha()
     if trim:
         bounds = image.get_bounding_rect()
@@ -23,6 +29,8 @@ def load_image(path: str, target_size: Tuple[int, int] | None = None, trim: bool
             image = image.subsurface(bounds).copy()
     if target_size is not None:
         image = pygame.transform.smoothscale(image, target_size)
+        
+    _IMAGE_CACHE[cache_key] = image
     return image
 
 
@@ -60,6 +68,8 @@ class Laser(Entity):
 class PlayerLaser(Laser):
     def __init__(self, pos: Tuple[int, int], screen_height: int) -> None:
         super().__init__(pos, -8, screen_height, (255, 255, 255))
+        self.image = load_image("graphics/ammo.png", (12, 24))
+        self.rect = self.image.get_rect(center=pos)
 
 
 class EnemyLaser(Laser):
@@ -110,11 +120,10 @@ class Enemy(Entity):
 
 
 class Ammo(Entity):
-    """Ammo pickup that upgrades player fire level."""
-
-    def __init__(self, pos: Tuple[int, int], screen_height: int) -> None:
-        super().__init__(pos, "graphics/extra.png")
-        self.image = load_image("graphics/extra.png", (22, 22), trim=True)
+    """Base pickup class for upgrades."""
+    def __init__(self, pos: Tuple[int, int], img_path: str, screen_height: int) -> None:
+        super().__init__(pos, img_path)
+        self.image = load_image(img_path, (32, 32), trim=True)
         self.rect = self.image.get_rect(center=pos)
         self.speed = 2
         self.screen_height = screen_height
@@ -123,6 +132,18 @@ class Ammo(Entity):
         self.rect.y += self.speed
         if self.rect.top > self.screen_height:
             self.kill()
+
+
+class BulletPowerUp(Ammo):
+    """Upgrades player attack level (fire_level)."""
+    def __init__(self, pos: Tuple[int, int], screen_height: int) -> None:
+        super().__init__(pos, "graphics/power-up-1.png", screen_height)
+
+
+class ShipPowerUp(Ammo):
+    """Increases the number of player ships."""
+    def __init__(self, pos: Tuple[int, int], screen_height: int) -> None:
+        super().__init__(pos, "graphics/power-up-2.png", screen_height)
 
 
 class Obstacle:
@@ -149,30 +170,46 @@ class Player(Entity):
 
     def __init__(self, pos: Tuple[int, int], constraint: int, speed: int, img_path: str, screen_height: int) -> None:
         super().__init__(pos, img_path)
-        self.ship_paths = ["graphics/player.png", "graphics/player-1.png"]
-        self.ship_size = (72, 56)
+        self.ship_paths = [
+            "graphics/spaceship-1.png",
+            "graphics/spaceship-2.png",
+            "graphics/spaceship-3.png",
+            "graphics/spaceship-4.png",
+            "graphics/spaceship-5.png",
+            "graphics/spaceship-6.png",
+        ]
+        self.ship_size = (64, 64)
         self.ship_index = 0
         self.image = load_image(self.ship_paths[self.ship_index], self.ship_size, trim=True)
         self.rect = self.image.get_rect(center=pos)
         self.speed = speed
         self.max_x_constraint = constraint
         self.screen_height = screen_height
-        self.lasers = pygame.sprite.Group()
         self.ready = True
         self.laser_time = 0
-        self.cooldown = 260
+        self.cooldown = 400  # Adjusted for auto-fire comfort
         self.fire_level = 1
+        self.timer = 0
 
-    def get_input(self) -> None:
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_RIGHT]:
-            self.rect.x += self.speed
-        if keys[pygame.K_LEFT]:
-            self.rect.x -= self.speed
-        if keys[pygame.K_SPACE] and self.ready:
-            self.shoot()
+    def update(self, move_dir: int = 0, lasers_group: pygame.sprite.Group = None) -> None:
+        """Advance the player ship's animation and handle collective movement."""
+        self.rect.x += move_dir * self.speed
+        
+        # Keep within screen bounds (safety check)
+        if self.rect.left < 0: self.rect.left = 0
+        if self.rect.right > self.max_x_constraint: self.rect.right = self.max_x_constraint
 
-    def shoot(self) -> None:
+        # Fire rate handling
+        if not self.ready:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.laser_time >= self.cooldown:
+                self.ready = True
+        
+        # Auto-fire
+        if self.ready and lasers_group is not None:
+            self.shoot(lasers_group)
+
+    def shoot(self, lasers_group: pygame.sprite.Group) -> None:
         positions = [self.rect.center]
         if self.fire_level >= 2:
             positions = [
@@ -187,26 +224,21 @@ class Player(Entity):
             ]
 
         for pos in positions:
-            self.lasers.add(PlayerLaser(pos, self.screen_height))
+            lasers_group.add(PlayerLaser(pos, self.screen_height))
 
         self.ready = False
         self.laser_time = pygame.time.get_ticks()
 
     def set_ship_by_level(self, level: int) -> None:
-        target_index = 1 if level >= 3 else 0
+        # Progression: every 3 levels change ship
+        # Level 1-2: Index 0, Level 3-5: Index 1, Level 6-8: Index 2...
+        target_index = (level - 1) // 3
+        target_index = min(target_index, len(self.ship_paths) - 1)
+        
         if target_index == self.ship_index:
             return
+            
         center = self.rect.center
         self.ship_index = target_index
         self.image = load_image(self.ship_paths[self.ship_index], self.ship_size, trim=True)
         self.rect = self.image.get_rect(center=center)
-
-    def update(self) -> None:
-        self.get_input()
-        if self.rect.left < 0:
-            self.rect.left = 0
-        if self.rect.right > self.max_x_constraint:
-            self.rect.right = self.max_x_constraint
-        if not self.ready and pygame.time.get_ticks() - self.laser_time > self.cooldown:
-            self.ready = True
-        self.lasers.update()
