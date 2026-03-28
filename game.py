@@ -3,7 +3,7 @@ import random
 from typing import List, Optional
 
 from entities import Ammo, Enemy, Player
-from storage import ScoreStorage
+from storage import PlayerStorage
 from ui_manager import UIManager
 
 
@@ -17,9 +17,13 @@ class Game:
         self.score = 0
         self.level = 1
         self.game_over = False
+        self.player_health = 3
+        self.invincible = False
+        self.invincible_timer = 0
         self.last_powerup_score = 0
         self.last_ship_powerup_score = 0
         self.ship_count = 1
+        self.current_player = None
         
         self.background = pygame.image.load("graphics/space.png").convert()
         self.hud_font = pygame.font.Font(None, 36)
@@ -37,7 +41,7 @@ class Game:
         self.enemy_event = pygame.USEREVENT + 1
         pygame.time.set_timer(self.enemy_event, 1200)
 
-        self.storage = ScoreStorage()
+        self.storage = PlayerStorage()
         self.ui = UIManager(self.screen_width, self.screen_height, self.storage)
         
         # Groups for game entities
@@ -111,6 +115,9 @@ class Game:
         self.last_powerup_score = 0
         self.last_ship_powerup_score = 0
         self.ship_count = 1
+        self.player_health = 3
+        self.invincible = False
+        self.invincible_timer = 0
         self.game_over = False
         self.enemies.empty()
         self.all_lasers.empty()
@@ -139,6 +146,12 @@ class Game:
 
     def check_collisions(self) -> None:
         """Handle gameplay collisions and game over state."""
+        # Check invincibility timer
+        if self.invincible:
+            now = pygame.time.get_ticks()
+            if now - self.invincible_timer >= 1500:  # 1.5s invincibility
+                self.invincible = False
+
         # Laser vs Enemy (Copy group to avoid mutation issues during iteration)
         lasers = self.all_lasers.sprites()
         for laser in lasers:
@@ -157,13 +170,24 @@ class Game:
             # Enemy vs Player
             hits = pygame.sprite.spritecollide(player_sprite, self.enemies, False)
             for enemy in hits:
-                player_sprite.kill()
                 enemy.kill()
                 self.explosion_sound.play()
-                # Update ship count for spawning logic if a ship is lost
-                if len(self.player) == 0:
-                    self.game_over = True
-                    self.ui.set_game_over(self.score)
+
+                if len(self.player) > 1:
+                    # Multiple ships: destroy the hit ship, no health loss
+                    player_sprite.kill()
+                    self.ship_count = len(self.player)
+                else:
+                    # Single ship: reduce health with invincibility
+                    if not self.invincible:
+                        self.player_health -= 1
+                        self.invincible = True
+                        self.invincible_timer = pygame.time.get_ticks()
+                        if self.player_health <= 0:
+                            player_sprite.kill()
+                            self.game_over = True
+                            self.ui.set_game_over(self.score)
+                break  # Only process one hit per ship per frame
             
             # Bullet Powerup vs Player
             bp_hits = pygame.sprite.spritecollide(player_sprite, self.bullet_powerups, True)
@@ -179,13 +203,27 @@ class Game:
                     self._spawn_player()
 
     def _draw_hud(self) -> None:
-        hud_lines = [
-            f"Score: {self.score}",
-            f"Health: {len(self.player)}",
-        ]
-        for index, line in enumerate(hud_lines):
-            text_surface = self.hud_font.render(line, True, (255, 255, 255))
-            self.screen.blit(text_surface, (12, 12 + index * 34))
+        # Score
+        score_surface = self.hud_font.render(f"Score: {self.score}", True, (255, 255, 255))
+        self.screen.blit(score_surface, (12, 12))
+
+        # Health bar with number
+        health_color = (80, 255, 80) if self.player_health >= 2 else (255, 80, 80)
+        health_surface = self.hud_font.render(f"HP: {self.player_health} / 3", True, health_color)
+        self.screen.blit(health_surface, (12, 46))
+
+        # Invincibility flash effect on player
+        if self.invincible:
+            tick = pygame.time.get_ticks()
+            if (tick // 100) % 2 == 0:
+                for ship in self.player:
+                    ship.image.set_alpha(100)
+            else:
+                for ship in self.player:
+                    ship.image.set_alpha(255)
+        else:
+            for ship in self.player:
+                ship.image.set_alpha(255)
 
     def run(self, events: List[pygame.event.Event]) -> Optional[str]:
         """Advance one frame of the game and UI state."""
@@ -197,6 +235,7 @@ class Game:
                 action = "quit"
 
         if prev_state != "playing" and self.ui.get_state() == "playing":
+            self.current_player = self.ui.current_player
             self.reset_round()
 
         if action == "quit":
